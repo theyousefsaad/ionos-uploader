@@ -1,67 +1,37 @@
-
-
 from flask import Flask, request, jsonify
-import os
-import paramiko
-from dotenv import load_dotenv
-
-load_dotenv()
 
 app = Flask(__name__)
+
 @app.route("/")
-def index():
-    return "IONOS uploader is working!"
-# Load env vars
-FTP_HOST = os.getenv("FTP_HOST")
-FTP_PORT = int(os.getenv("FTP_PORT", 22))
-FTP_USER = os.getenv("FTP_USER")
-FTP_PASS = os.getenv("FTP_PASS")
-BASE_URL = os.getenv("BASE_URL")
+def home():
+    return "IONOS Uploader is running"
 
 @app.route("/upload", methods=["POST"])
 def upload():
-    vin = request.form.get("vin")
-    year = request.form.get("year")
-    month = request.form.get("month")
+    data = request.get_json()
 
-    if not vin or not year or not month or 'files' not in request.files:
-        return jsonify({"error": "Missing required fields"}), 400
+    # Extract input values
+    vin = data.get("vin")
+    year = data.get("year")
+    month = data.get("month")
+    make = data.get("make")
+    model = data.get("model")
 
-    uploaded_files = request.files.getlist("files")
-    folder_path = f"/photos/2025CarPhotos/{month}/{year}{vin}/"
+    # Check required fields
+    if not vin or not year or not month or not make or not model:
+        return jsonify({"error": "Missing one or more required fields: vin, year, month, make, model"}), 400
 
-    try:
-        transport = paramiko.Transport((FTP_HOST, FTP_PORT))
-        transport.connect(username=FTP_USER, password=FTP_PASS)
-        sftp = paramiko.SFTPClient.from_transport(transport)
+    # Clean and format model name (remove spaces, title-case optional)
+    model_name = f"{year}{make}{model}".replace(" ", "")
 
-        try:
-            sftp.chdir(folder_path)
-        except IOError:
-            sftp.mkdir(folder_path)
-            sftp.chdir(folder_path)
+    # Construct full IONOS path
+    folder_path = f"/photos/2025CarPhotos/{month}/{model_name}-{vin}"
 
-        urls = []
-        for idx, file in enumerate(uploaded_files):
-            filename = f"{str(idx+1).zfill(3)}.jpg"
-            local_path = f"/tmp/{filename}"
-            file.save(local_path)
-            remote_path = folder_path + filename
-            sftp.put(local_path, remote_path)
-            urls.append(f"{BASE_URL}{folder_path}{filename}")
-            os.remove(local_path)
-
-        sftp.close()
-        transport.close()
-
-        return jsonify({"urls": urls}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # Respond with folder path for your Python uploader or for Glide to use later
+    return jsonify({
+        "message": "Upload path generated successfully",
+        "folder_path": folder_path
+    }), 200
 
 if __name__ == "__main__":
-    import os
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
-
-
+    app.run(debug=True)
