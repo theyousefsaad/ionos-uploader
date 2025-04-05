@@ -1,6 +1,4 @@
-@app.route("/")
-def index():
-    return "IONOS uploader is working!"
+
 
 from flask import Flask, request, jsonify
 import os
@@ -10,7 +8,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-
+@app.route("/")
+def index():
+    return "IONOS uploader is working!"
 # Load env vars
 FTP_HOST = os.getenv("FTP_HOST")
 FTP_PORT = int(os.getenv("FTP_PORT", 22))
