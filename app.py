@@ -1,3 +1,6 @@
+@app.route("/")
+def index():
+    return "IONOS uploader is working!"
 
 from flask import Flask, request, jsonify
 import os
