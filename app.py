@@ -50,8 +50,8 @@ def upload():
     else:
         return jsonify({"error": "Unsupported Media Type"}), 415
 
-        if __name__ == '__main__':
-    import os
+    if __name__ == '__main__':
+      import os
     port = int(os.environ.get("PORT", 10000))  # default to 10000 locally
     app.run(host='0.0.0.0', port=port)
 
