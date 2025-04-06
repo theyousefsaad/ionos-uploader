@@ -1,3 +1,8 @@
+from flask import Flask, request, jsonify
+import paramiko
+import os
+
+app = Flask(__name__)
 @app.route("/upload", methods=["POST"])
 def upload():
     if request.content_type.startswith("application/json"):
