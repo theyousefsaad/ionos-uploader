@@ -1,42 +1,46 @@
-from flask import Flask, request, jsonify
-
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "IONOS Uploader is running"
-
 @app.route("/upload", methods=["POST"])
 def upload():
-    data = request.get_json()
+    if request.content_type.startswith("application/json"):
+        # Handle raw JSON data (in case no files are sent)
+        data = request.get_json()
+        vin = data.get("vin")
+        year = data.get("year")
+        month = data.get("month")
+        make_model = data.get("make_model")
+        return jsonify({"error": "File uploads must be sent as form-data"}), 415
 
-    # Extract input values
-    vin = data.get("vin")
-    year = data.get("year")
-    month = data.get("month")
-    make = data.get("make")
-    model = data.get("model")
+    elif request.content_type.startswith("multipart/form-data"):
+        # Handle file upload from form-data (Glide or Postman)
+        vin = request.form.get("vin")
+        year = request.form.get("year")
+        month = request.form.get("month")
+        make_model = request.form.get("make_model")
 
-    # Check required fields
-    if not vin or not year or not month or not make or not model:
-        return jsonify({"error": "Missing one or more required fields: vin, year, month, make, model"}), 400
+        if not vin or not year or not month or not make_model or 'files' not in request.files:
+            return jsonify({"error": "Missing required fields"}), 400
 
-    # Clean and format model name (remove spaces, title-case optional)
-    model_name = f"{year}{make}{model}".replace(" ", "")
+        uploaded_files = request.files.getlist("files")
+        folder_path = f"/photos/2025CarPhotos/{month}/{year}{make_model}-{vin}"
 
-    # Construct full IONOS path
-    folder_path = f"/photos/2025CarPhotos/{month}/{model_name}-{vin}"
+        try:
+            transport = paramiko.Transport((FTP_HOST, FTP_PORT))
+            transport.connect(username=FTP_USER, password=FTP_PASS)
+            sftp = paramiko.SFTPClient.from_transport(transport)
 
-    # Respond with folder path for your Python uploader or for Glide to use later
-    return jsonify({
-        "message": "Upload path generated successfully",
-        "folder_path": folder_path
-    }), 200
+            try:
+                sftp.chdir(folder_path)
+            except IOError:
+                sftp.mkdir(folder_path)
 
-if __name__ == "__main__":
-    import os
+            for file in uploaded_files:
+                sftp.putfo(file.stream, f"{folder_path}/{file.filename}")
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+            sftp.close()
+            transport.close()
+            return jsonify({"message": "Files uploaded successfully"}), 200
 
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
+    else:
+        return jsonify({"error": "Unsupported Media Type"}), 415
