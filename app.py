@@ -22,15 +22,16 @@ def upload_images():
     month = request.form.get("month")
     file_urls = request.form.getlist("files")  # Glide sends image URLs here
 
-    if not all([year, make, model, vin, month]) or not files:
-     print("DEBUG - year:", year)
-     print("DEBUG - make:", make)
-     print("DEBUG - model:", model)
-     print("DEBUG - vin:", vin)
-     print("DEBUG - month:", month)
-     print("DEBUG - files:", files)
-    return jsonify({"error": "Missing one or more required fields."}), 400
+    # Debug logs
+    print("DEBUG - year:", year)
+    print("DEBUG - make:", make)
+    print("DEBUG - model:", model)
+    print("DEBUG - vin:", vin)
+    print("DEBUG - month:", month)
+    print("DEBUG - file_urls:", file_urls)
 
+    if not all([year, make, model, vin, month]) or not file_urls:
+        return jsonify({"error": "Missing one or more required fields."}), 400
 
     try:
         folder_year = "2025"  # You can make this dynamic if needed
@@ -81,6 +82,7 @@ def upload_images():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=10000)
