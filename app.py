@@ -1,58 +1,53 @@
 from flask import Flask, request, jsonify
 import paramiko
 import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+
+# SFTP credentials
+FTP_HOST = "ftp.yourdomain.com"
+FTP_PORT = 22
+FTP_USER = "your_username"
+FTP_PASS = "your_password"
+
 @app.route("/upload", methods=["POST"])
 def upload():
-    if request.content_type.startswith("application/json"):
-        # Handle raw JSON data (in case no files are sent)
-        data = request.get_json()
-        vin = data.get("vin")
-        year = data.get("year")
-        month = data.get("month")
-        make_model = data.get("make_model")
-        return jsonify({"error": "File uploads must be sent as form-data"}), 415
+    vin = request.form.get("vin")
+    year = request.form.get("year")
+    month = request.form.get("month")
+    make = request.form.get("make")
+    model = request.form.get("model")
 
-    elif request.content_type.startswith("multipart/form-data"):
-        # Handle file upload from form-data (Glide or Postman)
-        vin = request.form.get("vin")
-        year = request.form.get("year")
-        month = request.form.get("month")
-        make_model = request.form.get("make_model")
+    if not vin or not year or not month or not make or not model or 'files' not in request.files:
+        return jsonify({"error": "Missing required fields"}), 400
 
-        if not vin or not year or not month or not make_model or 'files' not in request.files:
-            return jsonify({"error": "Missing required fields"}), 400
+    uploaded_files = request.files.getlist("files")
+    model_name = f"{year}{make}{model}".replace(" ", "")
+    folder_path = f"/photos/2025CarPhotos/{month}/{model_name}-{vin}"
 
-        uploaded_files = request.files.getlist("files")
-        folder_path = f"/photos/2025CarPhotos/{month}/{year}{make_model}-{vin}"
+    try:
+        transport = paramiko.Transport((FTP_HOST, FTP_PORT))
+        transport.connect(username=FTP_USER, password=FTP_PASS)
+        sftp = paramiko.SFTPClient.from_transport(transport)
 
         try:
-            transport = paramiko.Transport((FTP_HOST, FTP_PORT))
-            transport.connect(username=FTP_USER, password=FTP_PASS)
-            sftp = paramiko.SFTPClient.from_transport(transport)
+            sftp.chdir(folder_path)
+        except IOError:
+            sftp.mkdir(folder_path)
+            sftp.chdir(folder_path)
 
-            try:
-                sftp.chdir(folder_path)
-            except IOError:
-                sftp.mkdir(folder_path)
+        for file in uploaded_files:
+            filename = secure_filename(file.filename)
+            sftp.putfo(file.stream, filename)
 
-            for file in uploaded_files:
-                sftp.putfo(file.stream, f"{folder_path}/{file.filename}")
+        sftp.close()
+        transport.close()
+        return jsonify({"message": "Files uploaded successfully", "folder": folder_path}), 200
 
-            sftp.close()
-            transport.close()
-            return jsonify({"message": "Files uploaded successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    else:
-        return jsonify({"error": "Unsupported Media Type"}), 415
-
-   if __name__ == '__main__':
-    import os
-    port = int(os.environ.get("PORT", 10000))  # Render will set the PORT env variable
-    app.run(host='0.0.0.0', port=port)
-
-
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
