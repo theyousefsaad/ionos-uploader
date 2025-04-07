@@ -1,9 +1,9 @@
 from flask import Flask, request, jsonify
 import os
+import datetime
 import paramiko
-import tempfile
-import requests
 from werkzeug.utils import secure_filename
+import tempfile
 
 app = Flask(__name__)
 
@@ -19,37 +19,23 @@ def upload_images():
     make = request.form.get("make")
     model = request.form.get("model")
     vin = request.form.get("vin")
-    month = request.form.get("month")
-    file_urls = request.form.getlist("files")  # Glide sends image URLs here
+    month = request.form.get("month")  # ← user-inputted month (e.g., Apr, May)
+    files = request.files.getlist("files")
 
-    # Debug logs
-    print("DEBUG - year:", year)
-    print("DEBUG - make:", make)
-    print("DEBUG - model:", model)
-    print("DEBUG - vin:", vin)
-    print("DEBUG - month:", month)
-    print("DEBUG - file_urls:", file_urls)
-
-    if not all([year, make, model, vin, month]) or not file_urls:
-        print("DEBUG - year:", year)
-        print("DEBUG - make:", make)
-        print("DEBUG - model:", model)
-        print("DEBUG - vin:", vin)
-        print("DEBUG - month:", month)
-        print("DEBUG - file_urls:", file_urls)
+    if not all([year, make, model, vin, month]) or not files:
         return jsonify({"error": "Missing one or more required fields."}), 400
 
     try:
-        folder_year = "2025"  # You can make this dynamic if needed
+        folder_year = datetime.datetime.now().strftime("%Y")  # keep current year
         vehicle_folder = f"{year}{make}{model}-{vin}"
         remote_base = f"/{folder_year}CarPhotos/{month}/{vehicle_folder}/"
 
-        # Connect to SFTP
+        # ==== CONNECT TO SFTP ====
         transport = paramiko.Transport((SFTP_HOST, SFTP_PORT))
         transport.connect(username=SFTP_USER, password=SFTP_PASS)
         sftp = paramiko.SFTPClient.from_transport(transport)
 
-        # Create nested folders
+        # ==== CREATE NESTED FOLDERS ====
         def make_remote_dirs(path):
             dirs = path.strip("/").split("/")
             current = ""
@@ -62,24 +48,21 @@ def upload_images():
 
         make_remote_dirs(remote_base)
 
-        # Upload files
+        # ==== UPLOAD FILES ====
         image_urls = []
-        for idx, url in enumerate(file_urls, 1):
-            ext = url.split(".")[-1].split("?")[0]
+        for idx, file in enumerate(files, 1):
+            filename = secure_filename(file.filename)
+            ext = filename.split(".")[-1]
             new_name = f"{str(idx).zfill(3)}.{ext}"
 
-            response = requests.get(url)
-            if response.status_code != 200:
-                continue
-
+            # Temporarily save file
             with tempfile.NamedTemporaryFile(delete=False) as temp:
-                temp.write(response.content)
-                temp.flush()
+                file.save(temp.name)
                 sftp.put(temp.name, remote_base + new_name)
                 os.remove(temp.name)
 
-            full_url = f"https://photos.carcafe-tx.com{remote_base}{new_name}"
-            image_urls.append(full_url)
+            url = f"https://photos.carcafe-tx.com{remote_base}{new_name}"
+            image_urls.append(url)
 
         sftp.close()
         transport.close()
@@ -88,7 +71,6 @@ def upload_images():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=10000)
