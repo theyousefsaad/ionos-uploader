@@ -23,12 +23,12 @@ def upload_images():
     file_urls = request.form.getlist("files")  # Glide sends image URLs here
 
     if not all([year, make, model, vin, month]) or not files:
-    print("DEBUG - year:", year)
-    print("DEBUG - make:", make)
-    print("DEBUG - model:", model)
-    print("DEBUG - vin:", vin)
-    print("DEBUG - month:", month)
-    print("DEBUG - files:", files)
+     print("DEBUG - year:", year)
+     print("DEBUG - make:", make)
+     print("DEBUG - model:", model)
+     print("DEBUG - vin:", vin)
+     print("DEBUG - month:", month)
+     print("DEBUG - files:", files)
     return jsonify({"error": "Missing one or more required fields."}), 400
 
 
