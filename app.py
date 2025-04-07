@@ -19,24 +19,23 @@ def upload_images():
     make = request.form.get("make")
     model = request.form.get("model")
     vin = request.form.get("vin")
+    month = request.form.get("month")  # ← user-inputted month (e.g., Apr, May)
     files = request.files.getlist("files")
 
-    if not all([year, make, model, vin]) or not files:
+    if not all([year, make, model, vin, month]) or not files:
         return jsonify({"error": "Missing one or more required fields."}), 400
 
     try:
-        now = datetime.datetime.now()
-        folder_year = now.strftime("%Y")
-        folder_month = now.strftime("%b")
+        folder_year = datetime.datetime.now().strftime("%Y")  # keep current year
         vehicle_folder = f"{year}{make}{model}-{vin}"
-        remote_base = f"/{folder_year}CarPhotos/{folder_month}/{vehicle_folder}/"
+        remote_base = f"/{folder_year}CarPhotos/{month}/{vehicle_folder}/"
 
-        # Connect to SFTP
+        # ==== CONNECT TO SFTP ====
         transport = paramiko.Transport((SFTP_HOST, SFTP_PORT))
         transport.connect(username=SFTP_USER, password=SFTP_PASS)
         sftp = paramiko.SFTPClient.from_transport(transport)
 
-        # Create nested folders
+        # ==== CREATE NESTED FOLDERS ====
         def make_remote_dirs(path):
             dirs = path.strip("/").split("/")
             current = ""
@@ -49,14 +48,14 @@ def upload_images():
 
         make_remote_dirs(remote_base)
 
-        # Upload files
+        # ==== UPLOAD FILES ====
         image_urls = []
         for idx, file in enumerate(files, 1):
             filename = secure_filename(file.filename)
             ext = filename.split(".")[-1]
             new_name = f"{str(idx).zfill(3)}.{ext}"
 
-            # Save temporarily
+            # Temporarily save file
             with tempfile.NamedTemporaryFile(delete=False) as temp:
                 file.save(temp.name)
                 sftp.put(temp.name, remote_base + new_name)
