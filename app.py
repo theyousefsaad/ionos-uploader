@@ -31,6 +31,12 @@ def upload_images():
     print("DEBUG - file_urls:", file_urls)
 
     if not all([year, make, model, vin, month]) or not file_urls:
+        print("DEBUG - year:", year)
+        print("DEBUG - make:", make)
+        print("DEBUG - model:", model)
+        print("DEBUG - vin:", vin)
+        print("DEBUG - month:", month)
+        print("DEBUG - file_urls:", file_urls)
         return jsonify({"error": "Missing one or more required fields."}), 400
 
     try:
