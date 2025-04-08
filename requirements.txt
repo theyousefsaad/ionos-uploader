@@ -3,3 +3,4 @@ flask
 paramiko
 python-dotenv
 requests
+openai
