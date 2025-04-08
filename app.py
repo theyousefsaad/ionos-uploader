@@ -60,26 +60,26 @@ def upload():
 
         make_remote_dirs(remote_base)
 
-        # ==== Upload Utility ====
-        def upload_files(file_list, prefix):
-            urls = []
-            for idx, file in enumerate(file_list, 1):
-                filename = secure_filename(file.filename)
-                ext = filename.split(".")[-1]
-                new_name = f"{prefix}{str(idx).zfill(3)}.{ext}"
+        # ==== Upload Images (rename to 001.jpg, etc.) ====
+        image_urls = []
+        for idx, file in enumerate(image_files, 1):
+            ext = secure_filename(file.filename).split(".")[-1]
+            new_name = f"{str(idx).zfill(3)}.{ext}"
+            with tempfile.NamedTemporaryFile(delete=False) as temp:
+                file.save(temp.name)
+                sftp.put(temp.name, remote_base + new_name)
+                os.remove(temp.name)
+            image_urls.append(f"https://photos.carcafe-tx.com{remote_base}{new_name}")
 
-                with tempfile.NamedTemporaryFile(delete=False) as temp:
-                    file.save(temp.name)
-                    sftp.put(temp.name, remote_base + new_name)
-                    os.remove(temp.name)
-
-                url = f"https://photos.carcafe-tx.com{remote_base}{new_name}"
-                urls.append(url)
-            return urls
-
-        # ==== Upload ====
-        image_urls = upload_files(image_files, "img_")
-        video_urls = upload_files(video_files, "vid_")
+        # ==== Upload Videos (keep original name) ====
+        video_urls = []
+        for file in video_files:
+            original_name = secure_filename(file.filename)
+            with tempfile.NamedTemporaryFile(delete=False) as temp:
+                file.save(temp.name)
+                sftp.put(temp.name, remote_base + original_name)
+                os.remove(temp.name)
+            video_urls.append(f"https://photos.carcafe-tx.com{remote_base}{original_name}")
 
         sftp.close()
         transport.close()
