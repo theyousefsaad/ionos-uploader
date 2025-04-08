@@ -20,21 +20,22 @@ def upload():
     month = request.form.get("month")
     make = request.form.get("make")
     model = request.form.get("model")
-    files = request.files.getlist("images")
+    image_files = request.files.getlist("images")
+    video_files = request.files.getlist("videos")
 
-    # === DEBUG LOGGING ===
     print("DEBUG - vin:", vin)
     print("DEBUG - year:", year)
     print("DEBUG - month:", month)
     print("DEBUG - make:", make)
     print("DEBUG - model:", model)
-    print("DEBUG - files received:", len(files))
+    print("DEBUG - image files:", len(image_files))
+    print("DEBUG - video files:", len(video_files))
 
-    if not all([vin, year, month, make, model]) or not files:
+    if not all([vin, year, month, make, model]) or (not image_files and not video_files):
         return jsonify({"error": "Missing required fields"}), 400
 
     try:
-        # ==== Remote Folder Path ====
+        # ==== Build Remote Folder ====
         now = datetime.datetime.now()
         folder_year = now.strftime("%Y")
         vehicle_folder = f"{year}{make}{model}-{vin}"
@@ -55,29 +56,38 @@ def upload():
                     sftp.mkdir(current)
                     print("Created folder:", current)
                 except IOError:
-                    pass  # Folder already exists
+                    pass
 
         make_remote_dirs(remote_base)
 
-        # ==== Upload Files ====
-        image_urls = []
-        for idx, file in enumerate(files, 1):
-            filename = secure_filename(file.filename)
-            ext = filename.split(".")[-1]
-            new_name = f"{str(idx).zfill(3)}.{ext}"
+        # ==== Upload Utility ====
+        def upload_files(file_list, prefix):
+            urls = []
+            for idx, file in enumerate(file_list, 1):
+                filename = secure_filename(file.filename)
+                ext = filename.split(".")[-1]
+                new_name = f"{prefix}{str(idx).zfill(3)}.{ext}"
 
-            with tempfile.NamedTemporaryFile(delete=False) as temp:
-                file.save(temp.name)
-                sftp.put(temp.name, remote_base + new_name)
-                os.remove(temp.name)
+                with tempfile.NamedTemporaryFile(delete=False) as temp:
+                    file.save(temp.name)
+                    sftp.put(temp.name, remote_base + new_name)
+                    os.remove(temp.name)
 
-            url = f"https://photos.carcafe-tx.com{remote_base}{new_name}"
-            image_urls.append(url)
+                url = f"https://photos.carcafe-tx.com{remote_base}{new_name}"
+                urls.append(url)
+            return urls
+
+        # ==== Upload ====
+        image_urls = upload_files(image_files, "img_")
+        video_urls = upload_files(video_files, "vid_")
 
         sftp.close()
         transport.close()
 
-        return jsonify({"uploaded": image_urls}), 200
+        return jsonify({
+            "uploaded_images": image_urls,
+            "uploaded_videos": video_urls
+        }), 200
 
     except Exception as e:
         print("ERROR:", str(e))
