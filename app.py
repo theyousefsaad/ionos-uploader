@@ -20,7 +20,7 @@ def upload():
     month = request.form.get("month")
     make = request.form.get("make")
     model = request.form.get("model")
-    files = request.files.getlist("files")
+    files = request.files.getlist("images")
 
     # === DEBUG LOGGING ===
     print("DEBUG - vin:", vin)
