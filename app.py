@@ -1,71 +1,87 @@
 from flask import Flask, request, jsonify
-from werkzeug.utils import secure_filename
 import os
 import datetime
 import paramiko
 import tempfile
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-# ==== CONFIG ====
+# ==== SFTP Config ====
 SFTP_HOST = "home558455723.1and1-data.host"
 SFTP_PORT = 22
 SFTP_USER = "u79546177"
 SFTP_PASS = "Carcafe123!"
 
-def upload_to_ionos(car_year, car_make, car_model, vin_last8, local_folder):
-    now = datetime.datetime.now()
-    folder_year = now.strftime("%Y")
-    folder_month = now.strftime("%b")
-    vehicle_folder = f"{car_year}{car_make}{car_model}-{vin_last8}"
-    remote_base = f"/{folder_year}CarPhotos/{folder_month}/{vehicle_folder}/"
-
-    transport = paramiko.Transport((SFTP_HOST, SFTP_PORT))
-    transport.connect(username=SFTP_USER, password=SFTP_PASS)
-    sftp = paramiko.SFTPClient.from_transport(transport)
-
-    def make_remote_dirs(path):
-        dirs = path.strip("/").split("/")
-        current = ""
-        for d in dirs:
-            current += "/" + d
-            try:
-                sftp.mkdir(current)
-            except IOError:
-                pass
-
-    make_remote_dirs(remote_base)
-
-    image_urls = []
-    for idx, filename in enumerate(sorted(os.listdir(local_folder)), 1):
-        ext = filename.split(".")[-1]
-        new_name = f"{str(idx).zfill(3)}.{ext}"
-        local_path = os.path.join(local_folder, filename)
-        remote_path = f"{remote_base}{new_name}"
-        sftp.put(local_path, remote_path)
-        image_urls.append(f"https://photos.carcafe-tx.com{remote_path}")
-
-    sftp.close()
-    transport.close()
-    return image_urls
-
-@app.route('/upload', methods=['POST'])
+@app.route("/upload", methods=["POST"])
 def upload():
-    data = request.form
-    vin = data.get('vin')
-    year = data.get('year')
-    make = data.get('make')
-    model = data.get('model')
-    folder_path = data.get('folder_path')
+    vin = request.form.get("vin")
+    year = request.form.get("year")
+    month = request.form.get("month")
+    make = request.form.get("make")
+    model = request.form.get("model")
+    files = request.files.getlist("files")
 
-    if not all([vin, year, make, model, folder_path]):
+    # === DEBUG LOGGING ===
+    print("DEBUG - vin:", vin)
+    print("DEBUG - year:", year)
+    print("DEBUG - month:", month)
+    print("DEBUG - make:", make)
+    print("DEBUG - model:", model)
+    print("DEBUG - files received:", len(files))
+
+    if not all([vin, year, month, make, model]) or not files:
         return jsonify({"error": "Missing required fields"}), 400
 
     try:
-        urls = upload_to_ionos(year, make, model, vin, folder_path)
-        return jsonify({"uploaded": urls}), 200
+        # ==== Remote Folder Path ====
+        now = datetime.datetime.now()
+        folder_year = now.strftime("%Y")
+        vehicle_folder = f"{year}{make}{model}-{vin}"
+        remote_base = f"/{folder_year}CarPhotos/{month}/{vehicle_folder}/"
+
+        # ==== Connect to SFTP ====
+        transport = paramiko.Transport((SFTP_HOST, SFTP_PORT))
+        transport.connect(username=SFTP_USER, password=SFTP_PASS)
+        sftp = paramiko.SFTPClient.from_transport(transport)
+
+        # ==== Create Folders ====
+        def make_remote_dirs(path):
+            dirs = path.strip("/").split("/")
+            current = ""
+            for d in dirs:
+                current += "/" + d
+                try:
+                    sftp.mkdir(current)
+                    print("Created folder:", current)
+                except IOError:
+                    pass  # Folder already exists
+
+        make_remote_dirs(remote_base)
+
+        # ==== Upload Files ====
+        image_urls = []
+        for idx, file in enumerate(files, 1):
+            filename = secure_filename(file.filename)
+            ext = filename.split(".")[-1]
+            new_name = f"{str(idx).zfill(3)}.{ext}"
+
+            with tempfile.NamedTemporaryFile(delete=False) as temp:
+                file.save(temp.name)
+                sftp.put(temp.name, remote_base + new_name)
+                os.remove(temp.name)
+
+            url = f"https://photos.carcafe-tx.com{remote_base}{new_name}"
+            image_urls.append(url)
+
+        sftp.close()
+        transport.close()
+
+        return jsonify({"uploaded": image_urls}), 200
+
     except Exception as e:
+        print("ERROR:", str(e))
         return jsonify({"error": str(e)}), 500
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
