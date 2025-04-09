@@ -14,6 +14,7 @@ SFTP_PORT = 22
 SFTP_USER = "u79546177"
 SFTP_PASS = "Carcafe123!"
 
+# OpenAI Key
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 @app.route("/", methods=["GET"])
@@ -87,86 +88,105 @@ def upload():
             carfax_file.save(carfax_temp.name)
             carfax_path = carfax_temp.name
 
-        # === AI PROMPTS ===
-        table_prompt = f"""
-        Create an HTML table in the Car Cafe 3-column style: Details, Information, and Options.
-        Always include VIN, Year, Make, Model, Mileage (last row), and Options.
+        # === Prompts ===
+        example_table = """
+<table style="width: 80%; border-collapse: collapse; font-family: Arial, sans-serif; margin: 20px auto; border-radius: 8px; overflow: hidden; border: 2px solid #ff8307;">
+<thead>
+<tr style="background-color: #ff8307; color: white;">
+<th style="padding: 12px;">Details</th>
+<th style="padding: 12px;">Information</th>
+<th style="padding: 12px;">Options</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>Year</td><td>2014</td><td>1 Owner</td></tr>
+<tr><td>Make</td><td>Ford</td><td>Accident Free</td></tr>
+<tr><td>Model</td><td>E350</td><td>CNG Conversion</td></tr>
+<tr><td>Mileage</td><td>6,700</td><td>245/75R16 Tires</td></tr>
+</tbody></table>
+"""
 
-        VIN: {vin}
-        Year: {year}
-        Make: {make}
-        Model: {model}
-        Mileage: {mileage}
-        Options: {options}
-        """
+        table_prompt = f"""
+Using the attached Carfax PDF and the following details, generate an HTML table like this example:
+{example_table}
+
+Vehicle Info:
+VIN: {vin}
+Year: {year}
+Make: {make}
+Model: {model}
+Mileage: {mileage}
+Options: {options}
+"""
 
         description_prompt = f"""
-        Write a clean, factual Car Cafe style vehicle description.
-        Mention cleanliness, service history, condition, and tires.
-        Do not exaggerate or oversell.
+Based on the attached Carfax and the following vehicle info, write a clean and honest Car Cafe-style description. Use professional HTML formatting.
 
-        VIN: {vin}
-        Year: {year}
-        Make: {make}
-        Model: {model}
-        Mileage: {mileage}
-        Options: {options}
-        """
+VIN: {vin}
+Year: {year}
+Make: {make}
+Model: {model}
+Mileage: {mileage}
+Options: {options}
+
+Do not exaggerate. Mention cleanliness, condition, tires, and service history.
+"""
 
         with open(carfax_path, "rb") as pdf_file:
             table_response = openai.ChatCompletion.create(
                 model="gpt-4-vision-preview",
                 messages=[
-                    {"role": "system", "content": "You create professional eBay HTML tables for cars."},
+                    {"role": "system", "content": "You create beautiful eBay car listing tables in HTML."},
                     {"role": "user", "content": [
                         {"type": "text", "text": table_prompt},
                         {"type": "image_file", "image_file": {"file": pdf_file}}
-                    ]},
+                    ]}
                 ],
                 max_tokens=1500
             )
 
             pdf_file.seek(0)
-
             description_response = openai.ChatCompletion.create(
                 model="gpt-4-vision-preview",
                 messages=[
-                    {"role": "system", "content": "You write vehicle descriptions for clean listings."},
+                    {"role": "system", "content": "You write car descriptions in clean HTML for eBay listings."},
                     {"role": "user", "content": [
                         {"type": "text", "text": description_prompt},
                         {"type": "image_file", "image_file": {"file": pdf_file}}
-                    ]},
+                    ]}
                 ],
-                max_tokens=1000
+                max_tokens=1200
             )
 
         table_html = table_response.choices[0].message.content
         description_html = description_response.choices[0].message.content
 
         gallery_html = "\n".join([
-            f'<img src="{url}" alt="Image {i+1:03d}" style="width: 500px; height: auto; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">'
+            f'<img src="{url}" alt="Image {i+1:03d}" style="width: 100%; max-width: 500px; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">'
             for i, url in enumerate(image_urls)
         ])
 
         video_html = ""
         if video_urls:
             video_html = f"""
-            <video width="640" height="360" controls style="max-width: 100%; border-radius: 8px;">
+            <div style="display: flex; justify-content: center; margin: 30px 0;">
+              <video width="640" height="360" controls style="max-width: 100%; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.2);">
                 <source src="{video_urls[0]}" type="video/mp4">
-            </video>
+              </video>
+            </div>
             """
 
         final_html = f"""
         <meta charset='utf-8'>
-        <div style="font-family: Arial;">
+        <div style="font-family: Arial, sans-serif;">
             <p><img src='https://photos.carcafe-tx.com/Branding/CarCafeTemplateBanner' width='1500' height='500'></p>
             {table_html}
             <h2 style='text-align: center; font-size: 28px; margin-top: 50px;'>Description</h2>
             {description_html}
-            <div style='margin: 30px 0;'>{video_html}</div>
+            {video_html}
             <h2 style='text-align: center; font-size: 28px;'>Gallery</h2>
             <div style='display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;'>{gallery_html}</div>
-            <p style='text-align: center; margin-top: 40px; font-size: 14px; color: #aaa;'>Created by Yousef Saad</p>
+            <p style='text-align: center; margin-top: 40px; font-size: 14px; color: #aaa;'>Created by Yousef Saad 🚀</p>
         </div>
         """
 
@@ -175,7 +195,6 @@ def upload():
     except Exception as e:
         print("❌ ERROR:", str(e))
         return jsonify({"error": str(e)}), 500
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)

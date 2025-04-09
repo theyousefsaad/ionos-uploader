@@ -1,8 +1,7 @@
-
 flask
 paramiko
 python-dotenv
 requests
 openai
-fitz
-frontend
+PyMuPDF
+
