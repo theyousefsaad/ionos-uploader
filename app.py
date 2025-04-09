@@ -3,7 +3,6 @@ import os
 import datetime
 import tempfile
 import paramiko
-import fitz  # PyMuPDF for PDF text extraction
 import openai
 from werkzeug.utils import secure_filename
 
@@ -83,64 +82,67 @@ def upload():
                 os.remove(temp.name)
             video_urls.append(f"https://photos.carcafe-tx.com{remote_base}{original_name}")
 
-        # === Extract Carfax PDF text ===
+        # === Save Carfax PDF ===
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as carfax_temp:
             carfax_file.save(carfax_temp.name)
             carfax_path = carfax_temp.name
 
-        doc = fitz.open(carfax_path)
-        carfax_text = "\n".join([page.get_text() for page in doc])
-        doc.close()
-
         # === AI PROMPTS ===
         table_prompt = f"""
-        Using the following Carfax info, generate an HTML table (3-column format: Details, Information, Options) with orange borders and centered content. Keep "Mileage" as the last row.
+        Create an HTML table in the Car Cafe 3-column style: Details, Information, and Options.
+        Always include VIN, Year, Make, Model, Mileage (last row), and Options.
+
         VIN: {vin}
         Year: {year}
         Make: {make}
         Model: {model}
         Mileage: {mileage}
         Options: {options}
-
-        Carfax Info:
-        {carfax_text}
         """
 
         description_prompt = f"""
-        Based on this Carfax info and these vehicle details, write a clean, no-fluff, factual vehicle description in Car Cafe style. Mention cleanliness, service history, interior/exterior condition, and tires.
+        Write a clean, factual Car Cafe style vehicle description.
+        Mention cleanliness, service history, condition, and tires.
+        Do not exaggerate or oversell.
+
         VIN: {vin}
         Year: {year}
         Make: {make}
         Model: {model}
         Mileage: {mileage}
         Options: {options}
-
-        Carfax Info:
-        {carfax_text}
         """
 
-        table_response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are an expert at writing HTML tables for eBay car listings."},
-                {"role": "user", "content": table_prompt}
-            ],
-            max_tokens=1200
-        )
+        with open(carfax_path, "rb") as pdf_file:
+            table_response = openai.ChatCompletion.create(
+                model="gpt-4-vision-preview",
+                messages=[
+                    {"role": "system", "content": "You create professional eBay HTML tables for cars."},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": table_prompt},
+                        {"type": "image_file", "image_file": {"file": pdf_file}}
+                    ]},
+                ],
+                max_tokens=1500
+            )
 
-        description_response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You write clean, effective car descriptions for online listings."},
-                {"role": "user", "content": description_prompt}
-            ],
-            max_tokens=1000
-        )
+            pdf_file.seek(0)
+
+            description_response = openai.ChatCompletion.create(
+                model="gpt-4-vision-preview",
+                messages=[
+                    {"role": "system", "content": "You write vehicle descriptions for clean listings."},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": description_prompt},
+                        {"type": "image_file", "image_file": {"file": pdf_file}}
+                    ]},
+                ],
+                max_tokens=1000
+            )
 
         table_html = table_response.choices[0].message.content
         description_html = description_response.choices[0].message.content
 
-        # === Gallery HTML ===
         gallery_html = "\n".join([
             f'<img src="{url}" alt="Image {i+1:03d}" style="width: 500px; height: auto; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">'
             for i, url in enumerate(image_urls)
@@ -154,7 +156,6 @@ def upload():
             </video>
             """
 
-        # === Final HTML ===
         final_html = f"""
         <meta charset='utf-8'>
         <div style="font-family: Arial;">
