@@ -4,3 +4,4 @@ paramiko
 python-dotenv
 requests
 openai
+fitz
