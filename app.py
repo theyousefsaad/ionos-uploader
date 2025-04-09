@@ -8,15 +8,12 @@ import traceback
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# ==== SFTP Config ====
 SFTP_HOST = "home558455723.1and1-data.host"
 SFTP_PORT = 22
 SFTP_USER = "u79546177"
 SFTP_PASS = "Carcafe123!"
-
-# OpenAI Key from environment
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 @app.route("/", methods=["GET"])
 def home():
@@ -25,7 +22,6 @@ def home():
 @app.route("/upload", methods=["POST"])
 def upload():
     try:
-        # === Get form fields ===
         vin = request.form.get("vin")
         year = request.form.get("year")
         month = request.form.get("month")
@@ -33,7 +29,6 @@ def upload():
         model = request.form.get("model")
         mileage = request.form.get("mileage")
         options = request.form.get("options")
-
         image_files = request.files.getlist("images")
         video_files = request.files.getlist("videos")
         carfax_file = request.files.get("carfax")
@@ -41,13 +36,12 @@ def upload():
         if not all([vin, year, month, make, model, mileage, carfax_file]):
             return jsonify({"error": "Missing required fields"}), 400
 
-        # === Folder Setup ===
         now = datetime.datetime.now()
         folder_year = now.strftime("%Y")
         vehicle_folder = f"{year}{make}{model}-{vin}"
         remote_base = f"/{folder_year}CarPhotos/{month}/{vehicle_folder}/"
 
-        # === SFTP Connect ===
+        # === Connect to SFTP ===
         transport = paramiko.Transport((SFTP_HOST, SFTP_PORT))
         transport.connect(username=SFTP_USER, password=SFTP_PASS)
         sftp = paramiko.SFTPClient.from_transport(transport)
@@ -85,12 +79,11 @@ def upload():
                 os.remove(temp.name)
             video_urls.append(f"https://photos.carcafe-tx.com{remote_base}{original_name}")
 
-        # === Save Carfax PDF ===
+        # === Save Carfax ===
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as carfax_temp:
             carfax_file.save(carfax_temp.name)
             carfax_path = carfax_temp.name
 
-        # === HTML Example for Table ===
         html_example = """
         <table style='width:80%; border:2px solid #ff8307; margin:auto; border-collapse:collapse;'>
         <thead><tr style='background-color:#ff8307; color:white;'>
@@ -103,64 +96,42 @@ def upload():
 
         table_prompt = f"""
         Generate a clean HTML table using this format:\n{html_example}\n
-        Make sure it's styled in the Car Cafe theme.
-        VIN: {vin}
-        Year: {year}
-        Make: {make}
-        Model: {model}
-        Mileage: {mileage}
-        Options: {options}
+        VIN: {vin}, Year: {year}, Make: {make}, Model: {model}, Mileage: {mileage}, Options: {options}
         """
 
         description_prompt = f"""
-        Write a factual vehicle description in this style:
-        "Welcome to Car Cafe! We’re proud to offer this well-maintained 2014 Ford E350...".
-        Mention cleanliness, service records, interior/exterior condition, tires, etc.
-
-        VIN: {vin}
-        Year: {year}
-        Make: {make}
-        Model: {model}
-        Mileage: {mileage}
-        Options: {options}
+        Write a vehicle description in Car Cafe style. Mention cleanliness, tires, service history, interior/exterior condition.
+        VIN: {vin}, Year: {year}, Make: {make}, Model: {model}, Mileage: {mileage}, Options: {options}
         """
 
+        # === GPT-4 Vision request (new SDK)
         with open(carfax_path, "rb") as pdf_file:
-            table_response = openai.ChatCompletion.create(
+            pdf_bytes = pdf_file.read()
+
+        def chat_with_pdf(prompt):
+            return openai.chat.completions.create(
                 model="gpt-4-vision-preview",
                 messages=[
-                    {"role": "system", "content": "You are an expert vehicle HTML formatter."},
+                    {"role": "system", "content": "You format clean vehicle listings in HTML."},
                     {"role": "user", "content": [
-                        {"type": "text", "text": table_prompt},
-                        {"type": "image_file", "image_file": {"file": pdf_file}}
+                        {"type": "text", "text": prompt},
+                        {"type": "file", "file": {"name": "carfax.pdf", "content": pdf_bytes}},
                     ]}
                 ],
                 max_tokens=1500
             )
 
-            pdf_file.seek(0)
-            description_response = openai.ChatCompletion.create(
-                model="gpt-4-vision-preview",
-                messages=[
-                    {"role": "system", "content": "You write clean used vehicle descriptions."},
-                    {"role": "user", "content": [
-                        {"type": "text", "text": description_prompt},
-                        {"type": "image_file", "image_file": {"file": pdf_file}}
-                    ]}
-                ],
-                max_tokens=1000
-            )
+        table_resp = chat_with_pdf(table_prompt)
+        description_resp = chat_with_pdf(description_prompt)
 
-        table_html = table_response.choices[0].message.content
-        description_html = description_response.choices[0].message.content
+        table_html = table_resp.choices[0].message.content
+        description_html = description_resp.choices[0].message.content
 
-        # === Gallery HTML ===
         gallery_html = "\n".join([
             f'<img src="{url}" alt="Image {i+1:03d}" style="width: 500px; height: auto; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">'
             for i, url in enumerate(image_urls)
         ])
 
-        # === Video Embed HTML ===
         video_html = ""
         if video_urls:
             video_html = f"""
@@ -169,7 +140,6 @@ def upload():
             </video>
             """
 
-        # === Final HTML Template ===
         final_html = f"""
         <meta charset='utf-8'>
         <div style="font-family: Arial;">
