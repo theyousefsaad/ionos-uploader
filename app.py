@@ -3,45 +3,41 @@ import os
 import datetime
 import tempfile
 import paramiko
-import traceback
-from werkzeug.utils import secure_filename
 from openai import OpenAI
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-# === SFTP CONFIG ===
+# ==== SFTP Config ====
 SFTP_HOST = "home558455723.1and1-data.host"
 SFTP_PORT = 22
 SFTP_USER = "u79546177"
 SFTP_PASS = "Carcafe123!"
 
-# === OpenAI Client ===
+# ==== OpenAI Client ====
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 
 @app.route("/", methods=["GET"])
 def home():
     return "✅ CarCafe API is live"
 
-def chat_with_pdf(prompt, file_path):
-    with open(file_path, "rb") as pdf_file:
-        response = client.chat.completions.create(
-            model="gpt-4-turbo",
-            messages=[
-                {"role": "system", "content": "You are a vehicle listing assistant for Car Cafe."},
-                {"role": "user", "content": prompt}
-            ],
-            tools=[{
-                "type": "file_search"
-            }],
-            tool_choice="auto",
-            files=[pdf_file]
-        )
+
+def chat_with_pdf(prompt):
+    response = client.chat.completions.create(
+        model="gpt-4-turbo",
+        messages=[
+            {"role": "system", "content": "You are a vehicle listing assistant for Car Cafe. Generate professional eBay-style HTML content."},
+            {"role": "user", "content": prompt}
+        ]
+    )
     return response.choices[0].message.content
+
 
 @app.route("/upload", methods=["POST"])
 def upload():
     try:
-        # === Get Form Data ===
+        # === Get Form Fields ===
         vin = request.form.get("vin")
         year = request.form.get("year")
         month = request.form.get("month")
@@ -57,7 +53,6 @@ def upload():
         if not all([vin, year, month, make, model, mileage, carfax_file]):
             return jsonify({"error": "Missing required fields"}), 400
 
-        # === Folder Setup ===
         now = datetime.datetime.now()
         folder_year = now.strftime("%Y")
         vehicle_folder = f"{year}{make}{model}-{vin}"
@@ -106,33 +101,12 @@ def upload():
             carfax_file.save(carfax_temp.name)
             carfax_path = carfax_temp.name
 
-        # === PROMPT TEMPLATES ===
+        # === Create Prompts ===
         table_prompt = f"""
-Please analyze the attached Carfax PDF and generate an HTML vehicle detail table in the Car Cafe format.
-
-✅ Example:
-<table style='width: 80%; margin: 20px auto; border: 2px solid #ff8307; border-collapse: collapse; font-family: Arial;'>
-<thead><tr style='background: #ff8307; color: white;'>
-<th style='padding: 12px; border: 2px solid #ff8307;'>Details</th>
-<th style='padding: 12px; border: 2px solid #ff8307;'>Information</th>
-<th style='padding: 12px; border: 2px solid #ff8307;'>Options</th>
-</tr></thead>
-<tbody>
-<tr><td style='padding: 12px; border: 2px solid #ff8307;'>VIN #</td><td style='padding: 12px; border: 2px solid #ff8307;'>{vin}</td><td style='padding: 12px; border: 2px solid #ff8307;'>1 Owner</td></tr>
-<tr><td style='padding: 12px; border: 2px solid #ff8307;'>Year</td><td style='padding: 12px; border: 2px solid #ff8307;'>{year}</td><td style='padding: 12px; border: 2px solid #ff8307;'>Clean Title</td></tr>
-<tr><td style='padding: 12px; border: 2px solid #ff8307;'>Make</td><td style='padding: 12px; border: 2px solid #ff8307;'>{make}</td><td style='padding: 12px; border: 2px solid #ff8307;'>Low Miles</td></tr>
-<tr><td style='padding: 12px; border: 2px solid #ff8307;'>Model</td><td style='padding: 12px; border: 2px solid #ff8307;'>{model}</td><td style='padding: 12px; border: 2px solid #ff8307;'>{options}</td></tr>
-<tr><td style='padding: 12px; border: 2px solid #ff8307;'>Mileage</td><td style='padding: 12px; border: 2px solid #ff8307;'>{mileage}</td><td style='padding: 12px; border: 2px solid #ff8307;'>Warranty Eligible</td></tr>
-</tbody></table>
-""".strip()
-
-        description_prompt = f"""
-Read the attached Carfax PDF and write a clean, honest vehicle description in Car Cafe style. Mention:
-
-- Cleanliness
-- Service history
-- Interior/exterior condition
-- Tires
+Use the vehicle info below to generate an HTML table in Car Cafe’s orange 3-column style. Use <table> with orange borders and clean rows like this example:
+<tr><td>Make</td><td>Ford</td><td>5.4L V8 CNG</td></tr>
+<tr><td>Interior</td><td>Gray</td><td>Natural Gas</td></tr>
+<tr><td>Miles</td><td>6,700</td><td>245/75R16 Tires</td></tr>
 
 VIN: {vin}
 Year: {year}
@@ -140,21 +114,30 @@ Make: {make}
 Model: {model}
 Mileage: {mileage}
 Options: {options}
+"""
 
-✅ Example style:
-Welcome to Car Cafe! We're proud to offer this well-maintained 2014 Ford E350. It's accident-free and shows signs of careful ownership. Inside, you'll find a clean gray interior, cold AC, and well-preserved seats. The tires are in great shape. A great pick for anyone seeking value and reliability.
-""".strip()
+        description_prompt = f"""
+Write a professional Car Cafe vehicle description. Mention service history, tire condition, interior/exterior details. Don’t exaggerate. Sound factual and clean.
 
-        # === Call OpenAI for table + description
-        table_html = chat_with_pdf(table_prompt, carfax_path)
-        description_html = chat_with_pdf(description_prompt, carfax_path)
+VIN: {vin}
+Year: {year}
+Make: {make}
+Model: {model}
+Mileage: {mileage}
+Options: {options}
+"""
 
-        # === Generate photo grid
+        # === Get HTML from OpenAI ===
+        table_html = chat_with_pdf(table_prompt)
+        description_html = chat_with_pdf(description_prompt)
+
+        # === Build Image Grid HTML ===
         gallery_html = "\n".join([
-            f'<img src="{url}" style="width: 500px; height: auto; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">'
-            for url in image_urls
+            f'<img src="{url}" alt="Image {i+1:03d}" style="width: 500px; height: auto; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">'
+            for i, url in enumerate(image_urls)
         ])
 
+        # === Build Video HTML ===
         video_html = ""
         if video_urls:
             video_html = f"""
@@ -163,7 +146,7 @@ Welcome to Car Cafe! We're proud to offer this well-maintained 2014 Ford E350. I
             </video>
             """
 
-        # === Final HTML
+        # === Final Template HTML ===
         final_html = f"""
         <meta charset='utf-8'>
         <div style="font-family: Arial;">
@@ -182,8 +165,8 @@ Welcome to Car Cafe! We're proud to offer this well-maintained 2014 Ford E350. I
 
     except Exception as e:
         print("❌ ERROR:", str(e))
-        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
