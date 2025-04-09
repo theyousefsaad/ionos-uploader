@@ -3,23 +3,46 @@ import os
 import datetime
 import tempfile
 import paramiko
-import openai
 from werkzeug.utils import secure_filename
+from openai import OpenAI
 
 app = Flask(__name__)
 
-# ==== SFTP Config ====
+# ==== SFTP CONFIG ====
 SFTP_HOST = "home558455723.1and1-data.host"
 SFTP_PORT = 22
 SFTP_USER = "u79546177"
 SFTP_PASS = "Carcafe123!"
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# ==== OpenAI CONFIG ====
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# ==== ROOT TEST ====
 @app.route("/", methods=["GET"])
 def home():
     return "✅ CarCafe API is live"
 
+# ==== HELPER: Upload to OpenAI & Ask ====
+def chat_with_pdf(prompt, file_id):
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4-turbo",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "file", "file_id": file_id}
+                    ]
+                }
+            ]
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print("🔥 Error in chat_with_pdf:", str(e))
+        raise
+
+# ==== MAIN UPLOAD ROUTE ====
 @app.route("/upload", methods=["POST"])
 def upload():
     try:
@@ -43,6 +66,7 @@ def upload():
         vehicle_folder = f"{year}{make}{model}-{vin}"
         remote_base = f"/{folder_year}CarPhotos/{month}/{vehicle_folder}/"
 
+        # === CONNECT TO SFTP ===
         transport = paramiko.Transport((SFTP_HOST, SFTP_PORT))
         transport.connect(username=SFTP_USER, password=SFTP_PASS)
         sftp = paramiko.SFTPClient.from_transport(transport)
@@ -59,6 +83,7 @@ def upload():
 
         make_remote_dirs(remote_base)
 
+        # === UPLOAD IMAGES ===
         image_urls = []
         for idx, file in enumerate(image_files, 1):
             ext = secure_filename(file.filename).split(".")[-1]
@@ -69,6 +94,7 @@ def upload():
                 os.remove(temp.name)
             image_urls.append(f"https://photos.carcafe-tx.com{remote_base}{new_name}")
 
+        # === UPLOAD VIDEOS ===
         video_urls = []
         for file in video_files:
             original_name = secure_filename(file.filename)
@@ -78,63 +104,50 @@ def upload():
                 os.remove(temp.name)
             video_urls.append(f"https://photos.carcafe-tx.com{remote_base}{original_name}")
 
-        # === Save Carfax PDF and upload to OpenAI ===
+        # === SAVE CARFAX TEMP FILE ===
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as carfax_temp:
             carfax_file.save(carfax_temp.name)
             carfax_path = carfax_temp.name
 
-        uploaded_pdf = openai.files.create(
-            file=open(carfax_path, "rb"),
-            purpose="assistants"
-        )
+        # === UPLOAD CARFAX TO OPENAI ===
+        with open(carfax_path, "rb") as f:
+            uploaded_file = client.files.create(file=f, purpose="assistants")
 
+        # === PROMPTS ===
         table_prompt = f"""
         Create an HTML table in the Car Cafe 3-column style: Details, Information, and Options.
         Always include VIN, Year, Make, Model, Mileage (last row), and Options.
-        Use this style as a reference:
+        VIN: {vin}
+        Year: {year}
+        Make: {make}
+        Model: {model}
+        Mileage: {mileage}
+        Options: {options}
 
-        <table style=\"width: 80%; border-collapse: collapse; font-family: Arial; border: 2px solid #ff8307;\">
-        ...
+        Example style:
+        <table style="width: 80%; border-collapse: collapse; ...">...</table>
         """
 
         description_prompt = f"""
         Write a clean, factual Car Cafe style vehicle description.
         Mention cleanliness, service history, condition, and tires.
-        Use this HTML format:
+        Do not exaggerate or oversell.
+        VIN: {vin}
+        Year: {year}
+        Make: {make}
+        Model: {model}
+        Mileage: {mileage}
+        Options: {options}
 
-        <h2 style='text-align: center; font-family: Arial; font-size: 28px;'>Description</h2>
-        <p style='text-align: justify;'>...</p>
+        Example style:
+        <p style="font-family: Arial, font-size: 16px; text-align: justify; ...">...</p>
         """
 
-        table_response = openai.chat.completions.create(
-            model="gpt-4-turbo",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": table_prompt},
-                        {"type": "file", "file_id": uploaded_pdf.id}
-                    ]
-                }
-            ]
-        )
+        # === CALL OPENAI ===
+        table_html = chat_with_pdf(table_prompt, uploaded_file.id)
+        description_html = chat_with_pdf(description_prompt, uploaded_file.id)
 
-        description_response = openai.chat.completions.create(
-            model="gpt-4-turbo",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": description_prompt},
-                        {"type": "file", "file_id": uploaded_pdf.id}
-                    ]
-                }
-            ]
-        )
-
-        table_html = table_response.choices[0].message.content
-        description_html = description_response.choices[0].message.content
-
+        # === GENERATE GALLERY HTML ===
         gallery_html = "\n".join([
             f'<img src="{url}" alt="Image {i+1:03d}" style="width: 500px; height: auto; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">'
             for i, url in enumerate(image_urls)
@@ -158,7 +171,7 @@ def upload():
             <div style='margin: 30px 0;'>{video_html}</div>
             <h2 style='text-align: center; font-size: 28px;'>Gallery</h2>
             <div style='display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;'>{gallery_html}</div>
-            <p style='text-align: center; margin-top: 40px; font-size: 14px; color: #aaa;'>Created by Yousef Saad</p>
+            <p style='text-align: center; margin-top: 40px; font-size: 14px; color: #aaa;'>Created by Yousef Saad 🚀</p>
         </div>
         """
 
@@ -167,6 +180,7 @@ def upload():
     except Exception as e:
         print("❌ ERROR:", str(e))
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
