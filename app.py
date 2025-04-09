@@ -4,16 +4,17 @@ import datetime
 import tempfile
 import paramiko
 import openai
-import traceback
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
+# ==== SFTP Config ====
 SFTP_HOST = "home558455723.1and1-data.host"
 SFTP_PORT = 22
 SFTP_USER = "u79546177"
 SFTP_PASS = "Carcafe123!"
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 @app.route("/", methods=["GET"])
 def home():
@@ -29,6 +30,7 @@ def upload():
         model = request.form.get("model")
         mileage = request.form.get("mileage")
         options = request.form.get("options")
+
         image_files = request.files.getlist("images")
         video_files = request.files.getlist("videos")
         carfax_file = request.files.get("carfax")
@@ -41,7 +43,6 @@ def upload():
         vehicle_folder = f"{year}{make}{model}-{vin}"
         remote_base = f"/{folder_year}CarPhotos/{month}/{vehicle_folder}/"
 
-        # === Connect to SFTP ===
         transport = paramiko.Transport((SFTP_HOST, SFTP_PORT))
         transport.connect(username=SFTP_USER, password=SFTP_PASS)
         sftp = paramiko.SFTPClient.from_transport(transport)
@@ -58,7 +59,6 @@ def upload():
 
         make_remote_dirs(remote_base)
 
-        # === Upload Images ===
         image_urls = []
         for idx, file in enumerate(image_files, 1):
             ext = secure_filename(file.filename).split(".")[-1]
@@ -69,7 +69,6 @@ def upload():
                 os.remove(temp.name)
             image_urls.append(f"https://photos.carcafe-tx.com{remote_base}{new_name}")
 
-        # === Upload Videos ===
         video_urls = []
         for file in video_files:
             original_name = secure_filename(file.filename)
@@ -79,53 +78,62 @@ def upload():
                 os.remove(temp.name)
             video_urls.append(f"https://photos.carcafe-tx.com{remote_base}{original_name}")
 
-        # === Save Carfax ===
+        # === Save Carfax PDF and upload to OpenAI ===
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as carfax_temp:
             carfax_file.save(carfax_temp.name)
             carfax_path = carfax_temp.name
 
-        html_example = """
-        <table style='width:80%; border:2px solid #ff8307; margin:auto; border-collapse:collapse;'>
-        <thead><tr style='background-color:#ff8307; color:white;'>
-        <th>Details</th><th>Information</th><th>Options</th></tr></thead>
-        <tbody><tr><td>Year</td><td>2014</td><td>1 Owner</td></tr>
-        <tr><td>Make</td><td>Ford</td><td>Backup Camera</td></tr>
-        <tr><td>Model</td><td>E350</td><td>Clean Title</td></tr>
-        <tr><td>Mileage</td><td>72,500</td><td>Bluetooth</td></tr></tbody></table>
-        """
+        uploaded_pdf = openai.files.create(
+            file=open(carfax_path, "rb"),
+            purpose="assistants"
+        )
 
         table_prompt = f"""
-        Generate a clean HTML table using this format:\n{html_example}\n
-        VIN: {vin}, Year: {year}, Make: {make}, Model: {model}, Mileage: {mileage}, Options: {options}
+        Create an HTML table in the Car Cafe 3-column style: Details, Information, and Options.
+        Always include VIN, Year, Make, Model, Mileage (last row), and Options.
+        Use this style as a reference:
+
+        <table style=\"width: 80%; border-collapse: collapse; font-family: Arial; border: 2px solid #ff8307;\">
+        ...
         """
 
         description_prompt = f"""
-        Write a vehicle description in Car Cafe style. Mention cleanliness, tires, service history, interior/exterior condition.
-        VIN: {vin}, Year: {year}, Make: {make}, Model: {model}, Mileage: {mileage}, Options: {options}
+        Write a clean, factual Car Cafe style vehicle description.
+        Mention cleanliness, service history, condition, and tires.
+        Use this HTML format:
+
+        <h2 style='text-align: center; font-family: Arial; font-size: 28px;'>Description</h2>
+        <p style='text-align: justify;'>...</p>
         """
 
-        # === GPT-4 Vision request (new SDK)
-        with open(carfax_path, "rb") as pdf_file:
-            pdf_bytes = pdf_file.read()
+        table_response = openai.chat.completions.create(
+            model="gpt-4-turbo",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": table_prompt},
+                        {"type": "file", "file_id": uploaded_pdf.id}
+                    ]
+                }
+            ]
+        )
 
-        def chat_with_pdf(prompt):
-            return openai.chat.completions.create(
-                model="gpt-4-vision-preview",
-                messages=[
-                    {"role": "system", "content": "You format clean vehicle listings in HTML."},
-                    {"role": "user", "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "file", "file": {"name": "carfax.pdf", "content": pdf_bytes}},
-                    ]}
-                ],
-                max_tokens=1500
-            )
+        description_response = openai.chat.completions.create(
+            model="gpt-4-turbo",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": description_prompt},
+                        {"type": "file", "file_id": uploaded_pdf.id}
+                    ]
+                }
+            ]
+        )
 
-        table_resp = chat_with_pdf(table_prompt)
-        description_resp = chat_with_pdf(description_prompt)
-
-        table_html = table_resp.choices[0].message.content
-        description_html = description_resp.choices[0].message.content
+        table_html = table_response.choices[0].message.content
+        description_html = description_response.choices[0].message.content
 
         gallery_html = "\n".join([
             f'<img src="{url}" alt="Image {i+1:03d}" style="width: 500px; height: auto; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">'
@@ -158,7 +166,6 @@ def upload():
 
     except Exception as e:
         print("❌ ERROR:", str(e))
-        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
