@@ -96,7 +96,58 @@ def upload():
             carfax_path = carfax_temp.name
 
         table_prompt = f"""
-Using the vehicle info below, generate an HTML table in Car Cafe’s EXACT orange 3-column format (details, information, options). Use bold headers, orange #ff8307 borders, and match all styling from previous samples.
+Using the vehicle info below, generate an HTML table in Car Cafe’s EXACT orange 3-column format (details, information, options). Use bold headers, orange #ff8307 borders, and match all styling from previous samples. Use this format as the template always: <table style="width: 80%; border-collapse: collapse; font-family: Arial, sans-serif; margin: 20px auto; border-radius: 8px; overflow: hidden; border: 2px solid #ff8307;">
+  <thead>
+    <tr style="background-color: #ff8307; color: white;">
+      <th style="padding: 12px 15px; text-transform: uppercase; font-size: 16px; font-weight: bold; border: 2px solid #ff8307;">Details</th>
+      <th style="padding: 12px 15px; text-transform: uppercase; font-size: 16px; font-weight: bold; border: 2px solid #ff8307;">Information</th>
+      <th style="padding: 12px 15px; text-transform: uppercase; font-size: 16px; font-weight: bold; border: 2px solid #ff8307;">Options</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; border: 2px solid #ff8307;">VIN #</td>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; background-color: #fff; color: #333; border: 2px solid #ff8307;">1GCHK29U94E108866</td>
+      <td style="padding: 12px 15px; text-align: center; border: 2px solid #ff8307;">2 Owner</td>
+    </tr>
+    <tr>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; border: 2px solid #ff8307;">Year</td>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; background-color: #fff; color: #333; border: 2px solid #ff8307;">2004</td>
+      <td style="padding: 12px 15px; text-align: center; border: 2px solid #ff8307;">Accident Free</td>
+    </tr>
+    <tr>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; border: 2px solid #ff8307;">Make</td>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; background-color: #fff; color: #333; border: 2px solid #ff8307;">Chevrolet</td>
+      <td style="padding: 12px 15px; text-align: center; border: 2px solid #ff8307;">6.0L V8</td>
+    </tr>
+    <tr>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; border: 2px solid #ff8307;">Model</td>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; background-color: #fff; color: #333; border: 2px solid #ff8307;">Silverado 2500 LS</td>
+      <td style="padding: 12px 15px; text-align: center; border: 2px solid #ff8307;">4X4 Extended Cab</td>
+    </tr>
+    <tr>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; border: 2px solid #ff8307;">Exterior</td>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; background-color: #fff; color: #333; border: 2px solid #ff8307;">White</td>
+      <td style="padding: 12px 15px; text-align: center; border: 2px solid #ff8307;">CD Player</td>
+    </tr>
+    <tr>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; border: 2px solid #ff8307;">Interior</td>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; background-color: #fff; color: #333; border: 2px solid #ff8307;">Gray Cloth</td>
+      <td style="padding: 12px 15px; text-align: center; border: 2px solid #ff8307;">Cloth Seats</td>
+    </tr>
+    <tr>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; border: 2px solid #ff8307;">Transmission</td>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; background-color: #fff; color: #333; border: 2px solid #ff8307;">Automatic</td>
+      <td style="padding: 12px 15px; text-align: center; border: 2px solid #ff8307;">Michelin Tires</td>
+    </tr>
+    <tr>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; border: 2px solid #ff8307;">Miles</td>
+      <td style="padding: 12px 15px; text-align: center; font-weight: bold; background-color: #fff; color: #333; border: 2px solid #ff8307;">170,043</td>
+      <td style="padding: 12px 15px; text-align: center; border: 2px solid #ff8307;">265/75R16 Tires</td>
+    </tr>
+  </tbody>
+</table>
+give me only the code for the table using the information given in the same style as always, always keep mileage at the bottom
 VIN: {vin}
 Year: {year}
 Make: {make}
@@ -106,7 +157,18 @@ Options: {options}
 """
 
         description_prompt = f"""
-Write a professional, factual, and clean vehicle description in the tone of Car Cafe. Mention condition, tires, service, interior/exterior. Structure it into 2-3 paragraphs with HTML <p> tags. Keep it consistent across all listings.
+Write a professional, factual, and clean vehicle description in the tone of Car Cafe. Mention condition, tires, service, interior/exterior. Structure it into 2-3 paragraphs with HTML <p> tags. Keep it consistent across all listings. Always make it look something like this: <p style="font-family: Arial, sans-serif; font-size: 16px; color: #555; line-height: 1.6; text-align: justify; max-width: 900px; margin: 20px auto;">
+    Welcome to <strong>Car Cafe, LLC</strong>! We're proud to offer this clean and well-kept <strong>2004 Chevrolet Silverado 2500 LS</strong> 4x4 with a 6.0L V8 engine. This accident-free, two-owner truck stands out for its care and condition, inside and out.
+</p>
+
+<p style="font-family: Arial, sans-serif; font-size: 16px; color: #555; line-height: 1.6; text-align: justify; max-width: 900px; margin: 20px auto;">
+    The interior features comfortable <strong>cloth seats</strong> and a reliable <strong>CD player</strong>, making every drive simple and functional. It’s equipped with a spacious <strong>Extended Cab</strong> layout for added versatility. This truck rides on a set of <strong>Michelin 265/75R16 tires</strong> that are in strong shape, offering durability and a confident drive.
+</p>
+
+<p style="font-family: Arial, sans-serif; font-size: 16px; color: #555; line-height: 1.6; text-align: justify; max-width: 900px; margin: 20px auto;">
+    At <strong>Car Cafe</strong>, we focus on offering clean, dependable vehicles that have been properly maintained. Financing options are available for qualified buyers, and we can assist with nationwide shipping. Service contracts are available upon request. Feel free to reach out to us with any questions or to schedule a time to see it in person.
+</p>
+give me only the code for the description in the same style, given the infromation, dont use words like excellent or perfect, mention how clean everything is, keep it simple focusing on the key points without glazing. make this description a selling point for the vehicle and taking about how every aspect is above average 
 VIN: {vin}
 Year: {year}
 Make: {make}
@@ -139,6 +201,7 @@ Options: {options}
             <h2 style='text-align: center; font-size: 28px; margin-top: 50px;'>Description</h2>
             {description_html}
             <div style='margin: 30px 0;'>{video_html}</div>
+            <img alt="" height="100" src="https://photos.carcafe-tx.com/Branding/Call%20us%20to%20schedule%20a%20live%20facetime%20video%20(3).png" width="600" class="auto-style7">
             <h2 style='text-align: center; font-size: 28px;'>Gallery</h2>
             <div style='display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;'>{gallery_html}</div>
             </body>
