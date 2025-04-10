@@ -6,7 +6,12 @@ import paramiko
 from openai import OpenAI
 from werkzeug.utils import secure_filename
 
+from flask_cors import CORS
+
 app = Flask(__name__)
+CORS(app, resources={r"/upload": {"origins": "http://localhost:3000"}})
+  # ✅ Allow all origins (good for testing)
+
 
 # ==== SFTP Config ====
 SFTP_HOST = "home558455723.1and1-data.host"
