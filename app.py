@@ -8,7 +8,8 @@ from werkzeug.utils import secure_filename
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app, resources={r"/upload": {"origins": "http://localhost:3000"}})
+CORS(app, origins=["http://localhost:3000", "https://ebaylistinguploader.web.app"])
+
 
 # ==== SFTP Config ====
 SFTP_HOST = "home558455723.1and1-data.host"
